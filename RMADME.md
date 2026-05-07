@@ -74,4 +74,3 @@ vTaskDelayUntil
 
 *连接小车*
 sudo docker run -it --rm -v /dev:/dev -v /dev/shm:/dev/shm --privileged --net=host registry.cn-hangzhou.aliyuncs.com/fishros/micro-ros-agent:$ROS_DISTRO udp4 --port 8888 -v6
-111
