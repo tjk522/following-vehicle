@@ -89,3 +89,9 @@ LidarTask 在 Core 1 优先级 4 下，taskENTER_CRITICAL(&scan_spinlock) 关了
 最早的 LidarScan 把 float ranges[180] 和 float angles[180] 嵌在结构体里（1452 字节），LidarManager 里还有 4 块 180 元素的静态 buffer（2880 字节），加上 MicroROS 的 laser_buf[180]（720 字节），激光相关内存吃掉 ~5KB。即使指针交换解决了 spinlock 时长，内存压力仍然导致 15 秒左右崩一次。改成指针 + 去掉 angles 后降到 ~2KB，彻底稳定。
 
 一句话：spinlock 里别做数据拷贝，只交换指针。
+
+*启动小车跟随*
+ 启动 Micro-ROS Agent（电脑上）
+1. sudo docker run -it --rm -v /dev:/dev -v /dev/shm:/dev/shm --privileged --net=host registry.cn-hangzhou.aliyuncs.com/fishros/micro-ros-agent:humble udp4 --port 8888 -v6
+2. 开启跟随（另一个终端）
+ros2 topic pub --once /leader_follow std_msgs/msg/Bool "data: true"
