@@ -74,3 +74,18 @@ vTaskDelayUntil
 
 *连接小车*
 sudo docker run -it --rm -v /dev:/dev -v /dev/shm:/dev/shm --privileged --net=host registry.cn-hangzhou.aliyuncs.com/fishros/micro-ros-agent:$ROS_DISTRO udp4 --port 8888 -v6
+
+*加入雷达扫描会重启*
+从 4 块 buffer（2880 字节）减到 2 块（1440 字节）
+
+1. 临界区内 memcpy 太久（主要）
+
+LidarTask 在 Core 1 优先级 4 下，taskENTER_CRITICAL(&scan_spinlock) 关了 Core 1 的中断，然后 memcpy 1440 字节。ESP32 复制这么大块数据需要毫秒级——中断被关太久，FreeRTOS 的 tick 得不到处理，任务看门狗触发 → ESP32 硬复位。
+
+换成指针交换后临界区只有 4 个指针赋值（微秒级），这个问题直接消失。
+
+2. 静态内存过大（次要）
+
+最早的 LidarScan 把 float ranges[180] 和 float angles[180] 嵌在结构体里（1452 字节），LidarManager 里还有 4 块 180 元素的静态 buffer（2880 字节），加上 MicroROS 的 laser_buf[180]（720 字节），激光相关内存吃掉 ~5KB。即使指针交换解决了 spinlock 时长，内存压力仍然导致 15 秒左右崩一次。改成指针 + 去掉 angles 后降到 ~2KB，彻底稳定。
+
+一句话：spinlock 里别做数据拷贝，只交换指针。

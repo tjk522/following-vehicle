@@ -17,43 +17,32 @@ void setup() {
     Serial.begin(115200);
     vTaskDelay(1000 / portTICK_PERIOD_MS);
 
-    //初始化屏幕
     DisplayManager_Init();
-
-    //  初始化底盘硬件
     ChassisSystem_Init();
-
-    // [新增] 1. 初始化雷达串口
     LidarManager_Init();
 
-    // [新增] 1. 启动 Core 1 雷达感知任务 (优先级 4)
     xTaskCreatePinnedToCore(
         Task_LidarLoop, "LidarTask", 4096, NULL, 4, NULL, 1
     );
 
-    // [新增] 2. 启动 Leader-Follower 跟随任务 (优先级 3)
     xTaskCreatePinnedToCore(
         Task_LeaderFollow, "FollowTask", 4096, NULL, 3, NULL, 1
     );
 
-    //  将底盘控制分配给 Core 1 (硬实时极高优先级)
     xTaskCreatePinnedToCore(
-        Task_ChassisLoop, "ChassisTask", 8192, NULL, 5, NULL, 1 
+        Task_ChassisLoop, "ChassisTask", 8192, NULL, 5, NULL, 1
     );
-    
-    //  将 Micro-ROS 通信分配给 Core 0 (处理 WiFi 与网络)
+
     xTaskCreatePinnedToCore(
-        Task_MicroROSLoop, "MicroROSTask", 16384, NULL, 2, NULL, 0 
+        Task_MicroROSLoop, "MicroROSTask", 16384, NULL, 2, NULL, 0
     );
 
     Serial.println("Dual Core Architecture Deployed! Ready for Command.");
 }
 
 void loop() {
-    // UI 线程：刷新屏幕（内含按键检测）
     DisplayManager_Update();
 
-    // 雷达调试打印
     float debug_dist = 0;
     float debug_angle = 0;
     bool  debug_found = false;

@@ -3,13 +3,11 @@
 #include <GlobalData.h>
 #include "TriLidar.h"
 
-// --- 硬件引脚配置 ---
 #define LIDAR_RX_PIN 40
 #define LIDAR_TX_PIN 41
 
 TriLidar lidar;
 
-// --- 雷达视野算法参数 ---
 const float MIN_VALID_DIST = 100.0;
 const float MAX_VALID_DIST = 1500.0;
 const float ROI_ANGLE = 30.0;
@@ -30,21 +28,20 @@ void Task_LidarLoop(void *pvParameters) {
     int missed_sweeps_count = 0;
     const int MAX_MISSED_SWEEPS = 3;
 
-    // 扫描缓冲区 (本地构建，完成后一次性写入全局黑板)
-    float local_ranges[LIDAR_SCAN_POINTS];
-    float local_angles[LIDAR_SCAN_POINTS];
-    uint16_t local_count = 0;
-    memset(local_ranges, 0, sizeof(local_ranges));
+    // 双缓冲 ranges（angles 不需要，LaserScan 只用到 ranges）
+    static float buf_a[LIDAR_SCAN_POINTS], buf_b[LIDAR_SCAN_POINTS];
+    float *write_buf = buf_a;
+    uint16_t scan_buf_count = 0;
+    bool use_buf_a = true;
+    memset(write_buf, 0, sizeof(buf_a));
 
     while (1) {
         if (lidar.waitScanDot() == RESULT_OK) {
             float distance = lidar.getCurrentScanPoint().distance;
             float raw_angle = lidar.getCurrentScanPoint().angle;
 
-            // 1. 跳变沿检测 (一圈结束)
             if (last_angle - raw_angle > 180.0) {
-
-                // --- 写入目标跟踪数据 ---
+                // 目标跟踪
                 taskENTER_CRITICAL(&state_spinlock);
                 if (found_in_this_sweep) {
                     global_state.target_distance = current_sweep_min_dist;
@@ -59,39 +56,34 @@ void Task_LidarLoop(void *pvParameters) {
                 }
                 taskEXIT_CRITICAL(&state_spinlock);
 
-                // --- 写入完整扫描帧 ---
                 taskENTER_CRITICAL(&scan_spinlock);
-                memcpy((void*)global_scan.ranges, local_ranges, sizeof(local_ranges));
-                memcpy((void*)global_scan.angles, local_angles, sizeof(local_angles));
-                global_scan.num_points = local_count;
-                global_scan.scan_stamp_us = micros();
+                global_scan.ranges = write_buf;
+                global_scan.num_points = scan_buf_count;
                 global_scan.scan_ready = true;
                 taskEXIT_CRITICAL(&scan_spinlock);
 
-                // 重置
+                use_buf_a = !use_buf_a;
+                write_buf = use_buf_a ? buf_a : buf_b;
+
                 current_sweep_min_dist = 9999.0;
                 found_in_this_sweep = false;
-                local_count = 0;
-                memset(local_ranges, 0, sizeof(local_ranges));
+                scan_buf_count = 0;
+                memset(write_buf, 0, sizeof(buf_a));
             }
             last_angle = raw_angle;
 
-            // 2. 坐标系旋转
             float car_angle = raw_angle + RADAR_YAW_OFFSET;
             if (car_angle >= 360.0) car_angle -= 360.0;
             else if (car_angle < 0.0) car_angle += 360.0;
 
-            // 3. 存入扫描缓冲区 (用于 LaserScan 发布)
-            uint16_t idx = (uint16_t)roundf(car_angle);
+            // 存入扫描缓冲区
+            uint16_t idx = (uint16_t)roundf(car_angle / 2.0f);
             if (idx < LIDAR_SCAN_POINTS) {
-                if (distance > MIN_VALID_DIST && distance < MAX_VALID_DIST) {
-                    local_ranges[idx] = distance / 1000.0f; // mm -> m
-                    local_angles[local_count] = car_angle;
-                    local_count++;
-                }
+                write_buf[idx] = distance / 1000.0f;
+                scan_buf_count++;
             }
 
-            // 4. 扇形视野过滤 (目标跟踪)
+            // 目标跟踪过滤
             bool is_in_front = (car_angle <= ROI_ANGLE) || (car_angle >= (360.0 - ROI_ANGLE));
             bool is_valid_distance = (distance > MIN_VALID_DIST) && (distance < MAX_VALID_DIST);
 

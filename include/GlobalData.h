@@ -74,21 +74,19 @@ typedef struct {
 } RobotState;
 
 // =========================================================================
-// 2.5 激光雷达完整扫描帧 (Core 1 写入, Core 0 读取发布)
+// 3. 跨核全局变量声明 (使用 extern)
 // =========================================================================
-#define LIDAR_SCAN_POINTS 360
+// =========================================================================
+// 2.5 激光雷达完整扫描帧
+// =========================================================================
+#define LIDAR_SCAN_POINTS 180
 typedef struct {
-    float ranges[LIDAR_SCAN_POINTS];
-    float angles[LIDAR_SCAN_POINTS];
+    float *ranges;
     uint16_t num_points;
     bool scan_ready;
     uint64_t scan_stamp_us;
 } LidarScan;
 
-// =========================================================================
-// 3. 跨核全局变量声明 (使用 extern)
-// =========================================================================
-// volatile 关键字告诉编译器：这些变量可能随时被其他核心改变，每次读取必须直接去内存拿，千万不要使用寄存器缓存！
 extern volatile TargetCommand global_cmd;
 extern volatile RobotState global_state;
 extern volatile LidarScan global_scan;
@@ -96,8 +94,6 @@ extern volatile LidarScan global_scan;
 // =========================================================================
 // 4. FreeRTOS 跨核互斥自旋锁 (Spinlocks)
 // =========================================================================
-// 保护机制：任何核心在读/写上面的全局变量时，必须先”抢锁”。
-// 抢到锁的核心在几微秒内快速读写完毕，然后释放。这就彻底杜绝了”数据撕裂”。
 extern portMUX_TYPE cmd_spinlock;
 extern portMUX_TYPE state_spinlock;
 extern portMUX_TYPE scan_spinlock;

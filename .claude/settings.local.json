@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /home/tjk/.platformio/lib/micro_ros_platformio* -name \"*.py\" -o -name \"*.json\" -o -name \"*.cmake\" 2>/dev/null | head -20)",
+      "Read(//home/tjk/.platformio/**)"
+    ]
+  }
+}
